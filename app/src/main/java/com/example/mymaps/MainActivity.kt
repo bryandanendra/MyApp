@@ -82,7 +82,11 @@ class MainActivity : AppCompatActivity() {
                 if (location != null) {
                     val latitude = location.latitude
                     val longitude = location.longitude
-                    updateMapWithLocation(latitude,longitude)
+                    // ubaya west
+                    val destLat = -7.2900
+                    val destLong = 112.6772
+                    updateMapWithRoute(latitude, longitude, destLat, destLong)
+
                     Log.d("LocationCallback", "Lat: $latitude, Lng: $longitude")
                 } else {
                     Log.e("LocationCallback", "Location is null.")
