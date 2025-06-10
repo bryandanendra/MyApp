@@ -15,6 +15,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.android.volley.Request
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
 import com.example.mymaps.databinding.ActivityMainBinding
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -27,9 +30,13 @@ import com.google.android.gms.location.LocationSettingsResponse
 import com.google.android.gms.location.Priority
 import com.google.android.gms.location.SettingsClient
 import com.google.android.gms.tasks.Task
+import org.json.JSONException
+import org.json.JSONObject
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.config.Configuration.getInstance
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding:ActivityMainBinding
@@ -75,7 +82,7 @@ class MainActivity : AppCompatActivity() {
                 if (location != null) {
                     val latitude = location.latitude
                     val longitude = location.longitude
-
+                    updateMapWithLocation(latitude,longitude)
                     Log.d("LocationCallback", "Lat: $latitude, Lng: $longitude")
                 } else {
                     Log.e("LocationCallback", "Location is null.")
@@ -102,9 +109,101 @@ class MainActivity : AppCompatActivity() {
         val mapController = map.controller
         mapController.setZoom(18.0)
         mapController.setCenter(startPoint)
+
+        val marker = Marker(binding.map)
+        marker.position = startPoint
+        marker.setAnchor(org.osmdroid.views.overlay.Marker.ANCHOR_CENTER, org.osmdroid.views.overlay.Marker.ANCHOR_BOTTOM)
+        marker.title = "You are here"
+        map.overlays.clear()
+        map.overlays.add(marker)
+        map.invalidate()
+
     }
 
-    override fun onResume() {
+    fun updateMapWithRoute(startLat: Double, startLng: Double, destLat: Double,
+                           destLng: Double) {
+
+        val map = binding.map
+        val startPoint = GeoPoint(startLat, startLng)
+        val endPoint = GeoPoint(destLat, destLng)
+        val mapController = map.controller
+        mapController.setZoom(15.0)
+        mapController.setCenter(startPoint)
+
+        // Start marker
+        val startMarker = org.osmdroid.views.overlay.Marker(map)
+        startMarker.position = startPoint
+        startMarker.setAnchor(
+            org.osmdroid.views.overlay.Marker.ANCHOR_CENTER,
+            org.osmdroid.views.overlay.Marker.ANCHOR_BOTTOM
+        )
+        startMarker.title = "Start"
+
+        // Destination marker
+        val destMarker = org.osmdroid.views.overlay.Marker(map)
+        destMarker.position = endPoint
+        destMarker.setAnchor(
+            org.osmdroid.views.overlay.Marker.ANCHOR_CENTER,
+            org.osmdroid.views.overlay.Marker.ANCHOR_BOTTOM
+        )
+        destMarker.title = "Destination"
+
+        map.overlays.clear()
+        map.overlays.add(startMarker)
+        map.overlays.add(destMarker)
+
+        // Request route from OSRM
+        val url = "https://router.project-osrm.org/route/v1/driving/$startLng,$startLat;$destLng,$destLat?overview=full&geometries=geojson"
+
+        // Volley request
+        val q = Volley.newRequestQueue(this)
+        val request = StringRequest(
+            Request.Method.GET, url,
+            {
+                // respons sukses
+                    response ->
+                try {
+                    val json = JSONObject(response)
+                    val routes = json.getJSONArray("routes")
+
+                    if (routes.length() > 0) {
+                        // start baca titik-titik rute
+                        val geometry = routes.getJSONObject(0)
+                            .getJSONObject("geometry")
+                            .getJSONArray("coordinates")
+
+                        val polylinePoints = mutableListOf<GeoPoint>()
+                        for (i in 0 until geometry.length()) {
+                            val coord = geometry.getJSONArray(i)
+                            val lon:Double = coord.getDouble(0)
+                            val lat:Double = coord.getDouble(1)
+                            polylinePoints.add(GeoPoint(lat, lon))
+                        }
+
+                        val roadOverlay = Polyline().apply {
+                            setPoints(polylinePoints)
+                            title = "Route"
+                        }
+                        map.overlays.add(roadOverlay)
+                        map.invalidate()
+                    }
+
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+
+            },
+            {
+                // respons gagal
+                Log.e("VolleyError", "Routing error: ${it.message}")
+            }
+        )
+
+        q.add(request)
+
+    }
+
+        override fun onResume() {
         super.onResume()
         startLocationUpdates()
     }
@@ -159,6 +258,7 @@ class MainActivity : AppCompatActivity() {
             if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                 // Permissions granted
                 fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null)
+
             } else {
                 Toast.makeText(this, "Location permission denied.", Toast.LENGTH_SHORT).show()
             }
